@@ -1,0 +1,416 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Telescopio Cósmico</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            background-color: #000;
+            height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            overflow: hidden;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            cursor: default;
+        }
+
+        /* Botón de Inicio */
+        #btn-inicio {
+            padding: 18px 45px;
+            font-size: 1.6rem;
+            color: #00ffcc;
+            background: transparent;
+            border: 2px solid #00ffcc;
+            border-radius: 50px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            box-shadow: 0 0 25px rgba(0, 255, 204, 0.4);
+            z-index: 10;
+        }
+
+        #btn-inicio:hover {
+            background-color: #00ffcc;
+            color: #000000;
+            box-shadow: 0 0 35px rgba(0, 255, 204, 0.9);
+            transform: scale(1.08);
+        }
+
+        /* Controles flotantes */
+        .controles {
+            display: none;
+            position: fixed;
+            top: 25px;
+            right: 25px;
+            gap: 12px;
+            z-index: 20;
+        }
+
+        .btn-control {
+            padding: 10px 22px;
+            font-size: 0.95rem;
+            color: #ffffff;
+            background: rgba(0, 0, 0, 0.8);
+            border: 1px solid rgba(255, 255, 255, 0.5);
+            border-radius: 30px;
+            backdrop-filter: blur(5px);
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .btn-control:hover {
+            background: #00ffcc;
+            color: #000000;
+            border-color: #00ffcc;
+            transform: scale(1.05);
+        }
+
+        #btn-salir:hover {
+            background: rgba(255, 0, 85, 0.9);
+            border-color: #ff0055;
+            color: #ffffff;
+        }
+
+        /* Contenedor del lienzo */
+        #canvas-container {
+            display: none;
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            justify-content: center;
+            align-items: center;
+            cursor: crosshair;
+        }
+
+        canvas {
+            display: block;
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Botón de Inicio -->
+    <button id="btn-inicio">Inicio</button>
+
+    <!-- Controles flotantes -->
+    <div class="controles" id="panel-controles">
+        <button class="btn-control" id="btn-audio">🔊 Sonido: ON</button>
+        <button class="btn-control" id="btn-salir">Salir</button>
+    </div>
+
+    <!-- Contenedor del lienzo -->
+    <div id="canvas-container">
+        <canvas id="telescopioCanvas"></canvas>
+    </div>
+
+    <script>
+        const btnInicio = document.getElementById('btn-inicio');
+        const btnSalir = document.getElementById('btn-salir');
+        const btnAudio = document.getElementById('btn-audio');
+        const panelControles = document.getElementById('panel-controles');
+        const canvasContainer = document.getElementById('canvas-container');
+        const canvas = document.getElementById('telescopioCanvas');
+        const ctx = canvas.getContext('2d');
+
+        let animacionId = null;
+        let activo = false;
+        let estrellas = [];
+        let nebulosas = [];
+        let planetas = [];
+        let anguloTelescopio = 0;
+        let escalaZoom = 1.0;
+        
+        // Variables para transiciones aleatorias suaves de zoom y rotación
+        let zoomDestino = 1.0;
+        let velocidadRotacion = 0.003;
+        let temporizadorCambios = 0;
+
+        // Variables de Audio (Volumen Máximo)
+        let audioCtx = null;
+        let audioActivo = true;
+        let masterGain = null;
+        let compresor = null;
+        let filtro = null;
+        let tiempoBucleMusica = null;
+        let pasoRitmo = 0;
+
+        function ajustarCanvas() {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+        }
+
+        window.addEventListener('resize', ajustarCanvas);
+
+        function inicializarTelescopio() {
+            estrellas = [];
+            nebulosas = [];
+            planetas = [];
+
+            // Estrellas lejanas
+            for (let i = 0; i < 300; i++) {
+                estrellas.push({
+                    x: (Math.random() - 0.5) * 1200,
+                    y: (Math.random() - 0.5) * 1200,
+                    radio: Math.random() * 2 + 0.5,
+                    brillo: Math.random()
+                });
+            }
+
+            // Nubes de nebulosas coloridas
+            for (let i = 0; i < 8; i++) {
+                nebulosas.push({
+                    x: (Math.random() - 0.5) * 600,
+                    y: (Math.random() - 0.5) * 600,
+                    radio: Math.random() * 180 + 100,
+                    matiz: Math.random() * 360,
+                    alfa: Math.random() * 0.25 + 0.1
+                });
+            }
+
+            // Planetas con órbitas y anillos
+            for (let i = 0; i < 4; i++) {
+                planetas.push({
+                    x: (Math.random() - 0.5) * 700,
+                    y: (Math.random() - 0.5) * 700,
+                    radio: Math.random() * 35 + 15,
+                    matiz: Math.random() * 360,
+                    tieneAnillos: Math.random() < 0.5
+                });
+            }
+
+            escalaZoom = 1.0;
+            zoomDestino = 1.2;
+            anguloTelescopio = 0;
+        }
+
+        // --- SISTEMA DE AUDIO CÓSMICO (Volumen Máximo) ---
+        function reproducirMusicaTelescopio() {
+            if (!audioActivo || !audioCtx || audioCtx.state !== 'running' || !activo) return;
+
+            const tiempoActual = audioCtx.currentTime;
+
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            osc.type = 'sine'; // Sonido ambiental profundo y espacial
+
+            const notasEspaciales = [110.00, 146.83, 164.81, 220.00, 293.66, 329.63];
+            let freq = notasEspaciales[pasoRitmo % notasEspaciales.length];
+
+            osc.frequency.setValueAtTime(freq, tiempoActual);
+
+            gain.gain.setValueAtTime(1.0, tiempoActual);
+            gain.gain.exponentialRampToValueAtTime(0.001, tiempoActual + 1.2);
+
+            osc.connect(gain);
+            gain.connect(filtro);
+            osc.start(tiempoActual);
+            osc.stop(tiempoActual + 1.3);
+
+            pasoRitmo++;
+            tiempoBucleMusica = setTimeout(reproducirMusicaTelescopio, 800);
+        }
+
+        function iniciarMusica() {
+            if (!audioCtx) {
+                audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            } else if (audioCtx.state === 'suspended') {
+                audioCtx.resume();
+            }
+
+            masterGain = audioCtx.createGain();
+            masterGain.gain.setValueAtTime(audioActivo ? 1.0 : 0, audioCtx.currentTime);
+
+            compresor = audioCtx.createDynamicsCompressor();
+            compresor.threshold.setValueAtTime(-15, audioCtx.currentTime);
+            compresor.ratio.setValueAtTime(15, audioCtx.currentTime);
+
+            filtro = audioCtx.createBiquadFilter();
+            filtro.type = 'lowpass';
+            filtro.frequency.setValueAtTime(1200, audioCtx.currentTime);
+
+            filtro.connect(compresor);
+            compresor.connect(masterGain);
+            masterGain.connect(audioCtx.destination);
+
+            pasoRitmo = 0;
+            reproducirMusicaTelescopio();
+        }
+
+        function detenerMusica() {
+            if (tiempoBucleMusica) clearTimeout(tiempoBucleMusica);
+            tiempoBucleMusica = null;
+            if (masterGain && audioCtx) {
+                masterGain.gain.linearRampToValueAtTime(0, audioCtx.currentTime + 0.2);
+            }
+        }
+
+        btnAudio.addEventListener('click', () => {
+            audioActivo = !audioActivo;
+            btnAudio.textContent = audioActivo ? "🔊 Sonido: ON" : "🔇 Sonido: OFF";
+            if (masterGain && audioCtx) {
+                masterGain.gain.setValueAtTime(audioActivo ? 1.0 : 0, audioCtx.currentTime);
+                if (audioActivo && activo && !tiempoBucleMusica) {
+                    reproducirMusicaTelescopio();
+                }
+            }
+        });
+
+        // --- CONTROLES DE PÁGINA ---
+        btnInicio.addEventListener('click', () => {
+            btnInicio.style.display = 'none';
+            panelControles.style.display = 'flex';
+            canvasContainer.style.display = 'block';
+            
+            ajustarCanvas();
+            inicializarTelescopio();
+            activo = true;
+
+            iniciarAnimacion();
+            iniciarMusica();
+        });
+
+        btnSalir.addEventListener('click', () => {
+            activo = false;
+            if (animacionId) cancelAnimationFrame(animacionId);
+            detenerMusica();
+
+            canvasContainer.style.display = 'none';
+            panelControles.style.display = 'none';
+            btnInicio.style.display = 'block';
+            
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+        });
+
+        // --- BUCLE DE ANIMACIÓN DEL TELESCOPIO ---
+        function iniciarAnimacion() {
+            if (!activo) return;
+
+            ctx.fillStyle = '#000000';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            const centroX = canvas.width / 2;
+            const centroY = canvas.height / 2;
+            const radioTelescopio = Math.min(canvas.width, canvas.height) * 0.40;
+
+            // Cambios aleatorios de zoom y velocidad de rotación cada pocos segundos
+            temporizadorCambios++;
+            if (temporizadorCambios > 180) { // Aproximadamente cada 3 segundos
+                zoomDestino = Math.random() * 0.9 + 0.7; // Nuevo nivel de zoom aleatorio
+                velocidadRotacion = (Math.random() - 0.5) * 0.008; // Cambio de dirección y velocidad de giro
+                temporizadorCambios = 0;
+            }
+
+            // Acercamiento fluido (zoom in / zoom out)
+            escalaZoom += (zoomDestino - escalaZoom) * 0.02;
+            anguloTelescopio += velocidadRotacion;
+
+            // --- RECORTE CIRCULAR DEL LENTE DEL TELESCOPIO ---
+            ctx.save();
+            ctx.beginPath();
+            ctx.arc(centroX, centroY, radioTelescopio, 0, Math.PI * 2);
+            ctx.closePath();
+            ctx.clip(); // Todo el universo observado se dibuja exclusivamente dentro de la lente
+
+            // Fondo profundo del telescopio
+            ctx.fillStyle = '#020205';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            ctx.save();
+            ctx.translate(centroX, centroY);
+            ctx.rotate(anguloTelescopio);
+            ctx.scale(escalaZoom, escalaZoom);
+
+            // 1. Dibujar Nebulosas de colores
+            for (let i = 0; i < nebulosas.length; i++) {
+                let n = nebulosas[i];
+                let grad = ctx.createRadialGradient(n.x, n.y, 10, n.x, n.y, n.radio);
+                grad.addColorStop(0, `hsla(${n.matiz}, 100%, 60%, ${n.alfa})`);
+                grad.addColorStop(1, 'transparent');
+
+                ctx.beginPath();
+                ctx.arc(n.x, n.y, n.radio, 0, Math.PI * 2);
+                ctx.fillStyle = grad;
+                ctx.fill();
+            }
+
+            // 2. Dibujar Estrellas
+            for (let i = 0; i < estrellas.length; i++) {
+                let s = estrellas[i];
+                s.brillo += (Math.random() - 0.5) * 0.1;
+                if (s.brillo < 0.2) s.brillo = 0.2;
+                if (s.brillo > 1.0) s.brillo = 1.0;
+
+                ctx.beginPath();
+                ctx.arc(s.x, s.y, s.radio, 0, Math.PI * 2);
+                ctx.fillStyle = `rgba(255, 255, 255, ${s.brillo})`;
+                ctx.shadowBlur = 8;
+                ctx.shadowColor = '#ffffff';
+                ctx.fill();
+            }
+            ctx.shadowBlur = 0;
+
+            // 3. Dibujar Planetas
+            for (let i = 0; i < planetas.length; i++) {
+                let p = planetas[i];
+
+                ctx.save();
+                ctx.translate(p.x, p.y);
+
+                // Anillo del planeta (si tiene)
+                if (p.tieneAnillos) {
+                    ctx.beginPath();
+                    ctx.ellipse(0, 0, p.radio * 2.2, p.radio * 0.7, Math.PI / 6, 0, Math.PI * 2);
+                    ctx.strokeStyle = `hsla(${p.matiz}, 80%, 70%, 0.6)`;
+                    ctx.lineWidth = 4;
+                    ctx.stroke();
+                }
+
+                // Cuerpo esférico del planeta con degradado tridimensional
+                let gradPlaneta = ctx.createRadialGradient(-p.radio * 0.3, -p.radio * 0.3, p.radio * 0.1, 0, 0, p.radio);
+                gradPlaneta.addColorStop(0, `hsl(${p.matiz}, 100%, 70%)`);
+                gradPlaneta.addColorStop(1, `hsl(${p.matiz}, 100%, 20%)`);
+
+                ctx.beginPath();
+                ctx.arc(0, 0, p.radio, 0, Math.PI * 2);
+                ctx.fillStyle = gradPlaneta;
+                ctx.shadowBlur = 15;
+                ctx.shadowColor = `hsl(${p.matiz}, 100%, 50%)`;
+                ctx.fill();
+
+                ctx.restore();
+            }
+
+            ctx.restore();
+            ctx.restore(); // Fin del recorte de la lente
+
+            // --- BISEL Y ESTRUCTURA EXTERIOR DEL TELESCOPIO (MARCO METÁLICO) ---
+            // Anillo exterior brillante
+            ctx.beginPath();
+            ctx.arc(centroX, centroY, radioTelescopio, 0, Math.PI * 2);
+            ctx.strokeStyle = '#00ffcc';
+            ctx.lineWidth = 6;
+            ctx.shadowBlur = 25;
+            ctx.shadowColor = '#00ffcc';
+            ctx.stroke();
+
+            // Retícula de mira del telescopio (Cruz central fina)
+            ctx.strokeStyle = 'rgba(0, 255, 204, 0.35)';
+            ctx.lineWidth = 1.5;
+            ctx.beginPath();
+            ctx.moveTo(centroX - 25, centroY); ctx.lineTo(centroX + 25, centroY);
+            ctx.moveTo(centroX, centroY - 25); ctx.lineTo(centroX, centroY + 25);
+            ctx.stroke();
+            ctx.shadowBlur = 0;
+
+            animacionId = requestAnimationFrame(iniciarAnimacion);
+        }
+    </script>
+</body>
+</html>
